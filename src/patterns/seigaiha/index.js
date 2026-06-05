@@ -3,8 +3,8 @@
 // but to the rest of the app it's just one generator behind the uniform
 // interface described in core/registry.js.
 
-import { strokeAttrs, f, escapeAttr } from '../../core/svg.js'
-import { patternR, buildTileScales, ringPath } from './geometry.js'
+import { strokeAttrs, f } from '../../core/svg.js'
+import { patternR, buildTrimmedTilePaths, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
@@ -13,7 +13,6 @@ function defaultParams() {
     density: 10,
     arcCount: 6,
     rowStep: 0.6, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
-    waveFill: '#ffffff', // opaque fill behind each scale's arcs (the wave body)
     // fan sub-mode
     cx: 350, // 0.35 * default W
     cy: 550, // 0.55 * default H
@@ -49,7 +48,6 @@ const controls = [
   // Pattern sub-mode
   { type: 'slider', key: 'density', label: 'Wave density', min: 2, max: 40, when: isPattern },
   { type: 'slider', key: 'arcCount', label: 'Arc count', min: 1, max: 20, when: isPattern },
-  { type: 'color', key: 'waveFill', label: 'Wave fill', when: isPattern },
   {
     type: 'slider',
     key: 'rowStep',
@@ -137,16 +135,15 @@ function build(params, shared) {
     const R = patternR(shared.W, params.density)
     const n = Math.max(1, Math.round(params.arcCount))
     const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
-    const maskFill = escapeAttr(params.waveFill ?? '#ffffff')
-    // Each scale paints its opaque mask, then its arcs on top; array order is
-    // back-to-front, so a front scale's fill hides the arc tails behind it.
-    const inner = buildTileScales(R, n, rowStep)
-      .map(({ mask, arcs }) => {
-        const fill = `        <path d="${mask}" fill="${maskFill}" stroke="none" />`
-        const strokes = arcs.map((d) => `          <path d="${d}" />`).join('\n')
-        return `${fill}\n        <g ${sa}>\n${strokes}\n        </g>`
-      })
+
+    // Visible-only geometry: each arc is trimmed to the spans not hidden behind
+    // a front scale, so the tile is just the line-work you actually see — no
+    // fills, no buried segments, transparent between the strokes on export.
+    const arcs = buildTrimmedTilePaths(R, n, rowStep)
+      .map((d) => `        <path d="${d}" />`)
       .join('\n')
+    const inner = `      <g ${sa}>\n${arcs}\n      </g>`
+
     // Horizontal period is 2R; vertical period is two staggered rows = 2*rowStep.
     const defs = `    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${inner}

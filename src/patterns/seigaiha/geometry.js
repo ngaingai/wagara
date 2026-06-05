@@ -12,44 +12,95 @@ export function patternR(W, density) {
   return Math.max(8, Math.round(W / (2 * Math.max(1, density))))
 }
 
-// Ordered scales for one 2R x (2*rowStep) pattern tile. Each scale carries an
-// opaque mask (the filled scale body) plus its concentric arc paths. Scales are
-// returned back-to-front (top rows first, bottom rows last) so painting them in
-// order lets each front scale's fill cover the overlapping arc tails of the
-// scale behind it — the masking that makes overlapped seigaiha look clean.
+// Visible-only seigaiha pattern tile: each concentric arc is trimmed
+// analytically to the angular spans NOT hidden behind a front (lower-row) scale,
+// so the tile is just the line-work you actually see — no fills, no buried
+// segments, transparent between the strokes on export. Order-independent and
+// seam-safe: with no plates and no draw order there's no masking seam to break
+// at the tile boundary.
 //
-// rowStep is the vertical distance between rows. At rowStep === R the lower
-// peaks only *touch* the upper baseline; rowStep < R makes them rise into the
-// row above so the scallops interlock. Horizontal period stays 2R; vertical
-// period is two staggered rows = 2 * rowStep (the caller's tile height).
+// rowStep is the vertical distance between rows as set by the caller. At
+// rowStep === R the lower peaks only touch the upper baseline; rowStep < R makes
+// them rise into the row above so the scallops interlock. Horizontal period
+// stays 2R; vertical period is two staggered rows = 2 * rowStep (the tile height).
 //
-// The mask extends below the baseline by d = max(0, 2*rowStep - R): the height
-// of the centre valley (the crown of the scale two rows down sitting below the
-// baseline). Pushing the flat bottom down by exactly d closes it. Below
-// rowStep = R/2 the deeper rows already overlap past the baseline, so d == 0.
-export function buildTileScales(R, n, rowStep = R) {
-  const d = Math.max(0, 2 * rowStep - R)
-  const span = Math.ceil(R / rowStep) + 1 // rows above/below that reach into the tile
-  const scales = []
+// An arc point at angle θ on circle (cx,cy,r) is hidden by a front scale
+// (ocx,ocy,R) exactly when cos(θ - α) < T, with α = atan2(cy-ocy, cx-ocx) and
+// T = (R² - dist² - r²)/(2·r·dist). Only lower rows (ocy > cy) can occlude, and
+// only the occluder's outer circle matters: every back-arc point sits at
+// y ≤ cy < ocy, above the front baseline, so the below-baseline strip never
+// participates.
+export function buildTrimmedTilePaths(R, n, rowStep = R) {
+  const TWO_PI = Math.PI * 2
+  const span = Math.ceil(R / rowStep) + 1
+
+  const centers = []
   for (let row = -span - 1; row <= span + 3; row++) {
     const cy = row * rowStep
-    const xOffset = Math.abs(row) % 2 === 0 ? 0 : R // stagger odd rows
-    for (let k = -1; k <= 2; k++) {
-      const cx = xOffset + k * 2 * R
-      // mask: outer arc, then down past the baseline by d, flat bottom, close
-      const mask =
-        `M ${f(cx - R)} ${f(cy)} A ${f(R)} ${f(R)} 0 0 1 ${f(cx + R)} ${f(cy)} ` +
-        `L ${f(cx + R)} ${f(cy + d)} L ${f(cx - R)} ${f(cy + d)} Z`
-      const arcs = []
-      for (let i = 1; i <= n; i++) {
-        const r = (R * i) / n
-        // upper semicircle, left to right, bulging up (smaller y)
-        arcs.push(`M ${f(cx - r)} ${f(cy)} A ${f(r)} ${f(r)} 0 0 1 ${f(cx + r)} ${f(cy)}`)
+    const xOffset = Math.abs(row) % 2 === 0 ? 0 : R
+    for (let k = -1; k <= 2; k++) centers.push([xOffset + k * 2 * R, cy])
+  }
+
+  // front scales (lower rows) whose outer circle can cut an arc of radius r at (cx,cy)
+  const occludersOf = (cx, cy, r) => {
+    const occ = []
+    for (const [ocx, ocy] of centers) {
+      if (ocy <= cy) continue
+      const dx = cx - ocx
+      const dy = cy - ocy
+      const dist = Math.hypot(dx, dy)
+      if (dist <= 0 || dist >= R + r) continue
+      occ.push({ alpha: Math.atan2(dy, dx), T: (R * R - dist * dist - r * r) / (2 * r * dist) })
+    }
+    return occ
+  }
+
+  // sub-intervals of the upper semicircle [PI, 2PI] left visible after every occluder
+  const visibleSpans = (cx, cy, r) => {
+    const occ = occludersOf(cx, cy, r)
+    const crit = new Set([Math.PI, TWO_PI])
+    for (const { alpha, T } of occ) {
+      if (T > -1 && T < 1) {
+        const beta = Math.acos(T)
+        for (let k = -1; k <= 2; k++) {
+          for (const s of [1, -1]) {
+            const a = alpha + s * beta + TWO_PI * k
+            if (a >= Math.PI - 1e-9 && a <= TWO_PI + 1e-9) crit.add(Math.min(Math.max(a, Math.PI), TWO_PI))
+          }
+        }
       }
-      scales.push({ mask, arcs })
+    }
+    const cs = [...crit].sort((p, q) => p - q)
+    const spans = []
+    for (let j = 0; j < cs.length - 1; j++) {
+      const a = cs[j]
+      const b = cs[j + 1]
+      if (b - a < 1e-6) continue
+      const mid = 0.5 * (a + b)
+      const visible = occ.every(({ alpha, T }) => !(Math.cos(mid - alpha) < T))
+      if (visible) {
+        if (spans.length && Math.abs(spans[spans.length - 1][1] - a) < 1e-6) spans[spans.length - 1][1] = b
+        else spans.push([a, b])
+      }
+    }
+    return spans
+  }
+
+  const paths = []
+  for (const [cx, cy] of centers) {
+    for (let i = 1; i <= n; i++) {
+      const r = (R * i) / n
+      for (const [a, b] of visibleSpans(cx, cy, r)) {
+        const sx = cx + r * Math.cos(a)
+        const sy = cy + r * Math.sin(a)
+        const ex = cx + r * Math.cos(b)
+        const ey = cy + r * Math.sin(b)
+        const large = b - a > Math.PI ? 1 : 0
+        paths.push(`M ${f(sx)} ${f(sy)} A ${f(r)} ${f(r)} 0 ${large} 1 ${f(ex)} ${f(ey)}`)
+      }
     }
   }
-  return scales
+  return paths
 }
 
 // One fan ring. straighten: null | { dir:'up'|'down', toEdge:bool, length, H }
