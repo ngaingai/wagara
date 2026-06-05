@@ -3,9 +3,8 @@
 // but to the rest of the app it's just one generator behind the uniform
 // interface described in core/registry.js.
 
-import { strokeAttrs } from '../../core/svg.js'
-import { f } from '../../core/svg.js'
-import { patternR, buildTilePaths, ringPath } from './geometry.js'
+import { strokeAttrs, f, escapeAttr } from '../../core/svg.js'
+import { patternR, buildTileScales, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
@@ -13,6 +12,8 @@ function defaultParams() {
     // pattern sub-mode
     density: 10,
     arcCount: 6,
+    rowStep: 0.6, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
+    waveFill: '#ffffff', // opaque fill behind each scale's arcs (the wave body)
     // fan sub-mode
     cx: 350, // 0.35 * default W
     cy: 550, // 0.55 * default H
@@ -48,11 +49,32 @@ const controls = [
   // Pattern sub-mode
   { type: 'slider', key: 'density', label: 'Wave density', min: 2, max: 40, when: isPattern },
   { type: 'slider', key: 'arcCount', label: 'Arc count', min: 1, max: 20, when: isPattern },
+  { type: 'color', key: 'waveFill', label: 'Wave fill', when: isPattern },
+  {
+    type: 'slider',
+    key: 'rowStep',
+    label: 'Row step',
+    min: 0.4,
+    max: 1.2,
+    step: 0.05,
+    suffix: '× R',
+    when: isPattern,
+  },
+  {
+    type: 'note',
+    when: isPattern,
+    text: (p) =>
+      p.rowStep < 1
+        ? 'Rows overlap (lower peaks rise into the row above) — classic seigaiha.'
+        : p.rowStep > 1
+          ? 'Rows have a gap between them.'
+          : 'Rows just touch (no overlap).',
+  },
   {
     type: 'note',
     when: isPattern,
     text: (p, shared) =>
-      `Tile R = ${patternR(shared.W, p.density)} (period 2R = ${2 * patternR(shared.W, p.density)})`,
+      `Tile ${2 * patternR(shared.W, p.density)} × ${(2 * patternR(shared.W, p.density) * p.rowStep).toFixed(0)} (period 2R × 2·rowStep)`,
   },
 
   // Fan sub-mode
@@ -114,13 +136,20 @@ function build(params, shared) {
   if (params.mode === 'pattern') {
     const R = patternR(shared.W, params.density)
     const n = Math.max(1, Math.round(params.arcCount))
-    const inner = buildTilePaths(R, n)
-      .map((d) => `        <path d="${d}" />`)
+    const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
+    const maskFill = escapeAttr(params.waveFill ?? '#ffffff')
+    // Each scale paints its opaque mask, then its arcs on top; array order is
+    // back-to-front, so a front scale's fill hides the arc tails behind it.
+    const inner = buildTileScales(R, n, rowStep)
+      .map(({ mask, arcs }) => {
+        const fill = `        <path d="${mask}" fill="${maskFill}" stroke="none" />`
+        const strokes = arcs.map((d) => `          <path d="${d}" />`).join('\n')
+        return `${fill}\n        <g ${sa}>\n${strokes}\n        </g>`
+      })
       .join('\n')
-    const defs = `    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * R)}">
-      <g ${sa}>
+    // Horizontal period is 2R; vertical period is two staggered rows = 2*rowStep.
+    const defs = `    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${inner}
-      </g>
     </pattern>\n`
     const body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
     return { defs, body }

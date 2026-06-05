@@ -51,8 +51,11 @@ export function outlineSvgStrokes(svgStr) {
     root.querySelectorAll('path').forEach((p) => {
       const d = p.getAttribute('d')
       if (!d) return
+      // Skip fill-only paths (e.g. seigaiha wave masks): they're already closed
+      // shapes, not strokes, and offsetting them would wreck the geometry.
+      const color = resolve(p, 'stroke', null)
+      if (!color || color === 'none') return
       const sw = parseFloat(resolve(p, 'stroke-width', '1'))
-      const color = resolve(p, 'stroke', '#000')
       const outline = outlinePathData(d, sw / 2, probe)
       if (!outline) return
       p.setAttribute('d', outline)
