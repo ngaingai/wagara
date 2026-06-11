@@ -4,7 +4,7 @@
 // interface described in core/registry.js.
 
 import { strokeAttrs, f } from '../../core/svg.js'
-import { patternR, buildScalePaths, tileUsePositions, ringPath } from './geometry.js'
+import { patternR, buildScalePaths, tileUsePositions, waterfallCenter, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
@@ -13,6 +13,7 @@ function defaultParams() {
     density: 10,
     arcCount: 6,
     rowStep: 0.6, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
+    waterfall: false, // one wave (top-right-most) flows down over the field
     // fan sub-mode
     cx: 350, // 0.35 * default W
     cy: 550, // 0.55 * default H
@@ -74,6 +75,12 @@ const controls = [
     text: (p, shared) =>
       `Tile ${2 * patternR(shared.W, p.density)} × ${(2 * patternR(shared.W, p.density) * p.rowStep).toFixed(0)} (period 2R × 2·rowStep)`,
   },
+  {
+    type: 'checkbox',
+    key: 'waterfall',
+    label: 'Waterfall (top-right wave flows down over the field)',
+    when: isPattern,
+  },
 
   // Fan sub-mode
   {
@@ -90,7 +97,7 @@ const controls = [
   { type: 'slider', key: 'startAngle', label: 'Start angle', min: 0, max: 360, suffix: '°', when: isFan },
   { type: 'slider', key: 'endAngle', label: 'End angle', min: 0, max: 360, suffix: '°', when: isFan },
   { type: 'slider', key: 'rotation', label: 'Rotation', min: 0, max: 360, suffix: '°', when: isFan },
-  { type: 'checkbox', key: 'straighten', label: 'Straighten (arc tails → bars)', when: isFan },
+  { type: 'checkbox', key: 'straighten', label: 'Waterfall (straighten arc tails into bars)', when: isFan },
 
   {
     type: 'toggle',
@@ -123,7 +130,12 @@ const controls = [
   {
     type: 'note',
     when: whenStraight,
-    text: () => "Use end angle 360° (3 o'clock) for clean vertical bars.",
+    text: (p) => {
+      const eff = (((p.endAngle + p.rotation) % 360) + 360) % 360
+      return eff === 0
+        ? "Arc tails meet the bars smoothly (end angle + rotation lands at 3 o'clock)."
+        : `For smooth joins, end angle + rotation should land on 0/360° — currently ${eff}°.`
+    },
   },
 ]
 
@@ -154,7 +166,21 @@ ${arcs}
     <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${uses}
     </pattern>\n`
-    const body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
+    let body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
+
+    // Waterfall: one wave redrawn whole in front of the field, its arcs
+    // continuing as vertical falls to the bottom edge. Painted after the
+    // pattern rect so it flows over the rows below it.
+    if (params.waterfall) {
+      const [wx, wy] = waterfallCenter(R, rowStep, shared.W)
+      const straighten = { dir: 'down', toEdge: true, length: 0, H: shared.H }
+      const falls = []
+      for (let i = 1; i <= n; i++) {
+        const d = ringPath(wx, wy, (R * i) / n, 180, 360, straighten)
+        falls.push(`      <path d="${d}" />`)
+      }
+      body += `  <g id="seigaiha-waterfall" ${sa}>\n${falls.join('\n')}\n  </g>\n`
+    }
     return { defs, body }
   }
 
@@ -169,17 +195,19 @@ ${uses}
       }
     : null
 
+  // Rotation folds into the sweep angles: rotating concentric arcs about their
+  // shared center IS an angle shift. A group rotate would also tilt the
+  // straighten bars and break their to-edge length — these are canvas-space
+  // verticals and must stay out of any rotated frame.
+  const rot = params.rotation || 0
   const rings = []
   for (let i = 1; i <= N; i++) {
     const r = params.r0 + (i - 1) * params.gap
     if (r <= 0) continue
-    const d = ringPath(params.cx, params.cy, r, params.startAngle, params.endAngle, straighten)
+    const d = ringPath(params.cx, params.cy, r, params.startAngle + rot, params.endAngle + rot, straighten)
     rings.push(`      <g class="ring" data-ring="${i}">\n        <path d="${d}" />\n      </g>`)
   }
-  const rotate = params.rotation
-    ? ` transform="rotate(${f(params.rotation)} ${f(params.cx)} ${f(params.cy)})"`
-    : ''
-  const body = `  <g id="seigaiha-fan"${rotate} ${sa}>\n${rings.join('\n')}\n  </g>\n`
+  const body = `  <g id="seigaiha-fan" ${sa}>\n${rings.join('\n')}\n  </g>\n`
   return { defs: '', body }
 }
 
@@ -245,7 +273,7 @@ const presets = [
     },
   },
   {
-    label: 'Wave Tail',
+    label: 'Waterfall',
     shared: { W: 1000, H: 1000, transparent: true, stroke: '#000000', lineThickness: 8, pngScale: 2 },
     params: {
       mode: 'fan',

@@ -124,6 +124,18 @@ export function tileUsePositions(R, rowStep, pad = 0) {
   return out
 }
 
+// Center of the wave a pattern-mode waterfall falls from: the top-most row of
+// fully visible scales (cy − R ≥ 0), right-most column that fits whole
+// (cx + R ≤ W). The overlay draws that scale untrimmed in front of the tiled
+// field, each arc continuing as a vertical bar to the bottom edge — i.e. a
+// fan-mode waterfall (ringPath) anchored on a lattice scale.
+export function waterfallCenter(R, rowStep, W) {
+  const j = Math.max(1, Math.ceil(R / rowStep))
+  const xOffset = j % 2 === 0 ? 0 : R
+  const k = Math.max(0, Math.floor((W - R - xOffset) / (2 * R)))
+  return [xOffset + k * 2 * R, j * rowStep]
+}
+
 // One fan ring. straighten: null | { dir:'up'|'down', toEdge:bool, length, H }
 export function ringPath(cx, cy, r, startDeg, endDeg, straighten) {
   const [sx, sy] = pt(cx, cy, r, startDeg)
