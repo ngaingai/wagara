@@ -3,6 +3,8 @@
 // about any specific pattern. Shared controls and pattern controls both flow
 // through here.
 
+import { useState } from 'react'
+
 const resolve = (v, shared) => (typeof v === 'function' ? v(shared) : v)
 
 function clamp(v, min, max) {
@@ -54,22 +56,7 @@ function Control({ control, values, onChange, shared }) {
       )
 
     case 'number':
-      return (
-        <label className="ctrl">
-          <span className="ctrl-label">{c.label}</span>
-          <input
-            type="number"
-            min={min}
-            max={max}
-            step={c.step ?? 1}
-            value={val}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              onChange(c.key, clamp(v, min ?? -Infinity, max ?? Infinity))
-            }}
-          />
-        </label>
-      )
+      return <NumberControl c={c} val={val} min={min} max={max} onChange={onChange} />
 
     case 'color':
       return (
@@ -136,4 +123,33 @@ function Control({ control, values, onChange, shared }) {
     default:
       return null
   }
+}
+
+// Numbers buffer keystrokes locally and only clamp + commit on blur/Enter, so
+// clearing "1000" to type "800" doesn't snap the value to min mid-edit.
+function NumberControl({ c, val, min, max, onChange }) {
+  const [draft, setDraft] = useState(null) // null = not editing
+  const commit = () => {
+    if (draft === null) return
+    const v = Number(draft)
+    if (draft.trim() !== '' && Number.isFinite(v)) {
+      onChange(c.key, clamp(v, min ?? -Infinity, max ?? Infinity))
+    }
+    setDraft(null)
+  }
+  return (
+    <label className="ctrl">
+      <span className="ctrl-label">{c.label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={c.step ?? 1}
+        value={draft ?? val}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
+    </label>
+  )
 }

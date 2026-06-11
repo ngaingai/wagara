@@ -19,9 +19,12 @@
 
 const registry = new Map()
 
+// Re-registering an id overwrites: under Vite HMR an edited pattern module
+// re-runs its registerPattern() call against a registry Map that survived the
+// reload, and the fresh module must win (a hard error here white-screens the
+// dev app until a full refresh).
 export function registerPattern(module) {
   if (!module || !module.id) throw new Error('Pattern module needs an id')
-  if (registry.has(module.id)) throw new Error(`Pattern "${module.id}" already registered`)
   registry.set(module.id, module)
   return module
 }

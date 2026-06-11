@@ -4,7 +4,7 @@
 // interface described in core/registry.js.
 
 import { strokeAttrs, f } from '../../core/svg.js'
-import { patternR, buildTrimmedTilePaths, ringPath } from './geometry.js'
+import { patternR, buildScalePaths, tileUsePositions, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
@@ -136,17 +136,23 @@ function build(params, shared) {
     const n = Math.max(1, Math.round(params.arcCount))
     const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
 
-    // Visible-only geometry: each arc is trimmed to the spans not hidden behind
-    // a front scale, so the tile is just the line-work you actually see — no
-    // fills, no buried segments, transparent between the strokes on export.
-    const arcs = buildTrimmedTilePaths(R, n, rowStep)
-      .map((d) => `        <path d="${d}" />`)
+    // Every scale in the lattice shows identical visible spans (glide
+    // invariance — see geometry.js), so the trimmed line-work is computed once
+    // for a canonical scale and stamped across the tile with <use> translates.
+    // xlink:href duplicates href for pre-SVG2 tools (older Illustrator/Inkscape).
+    const arcs = buildScalePaths(R, n, rowStep)
+      .map((d) => `      <path d="${d}" />`)
       .join('\n')
-    const inner = `      <g ${sa}>\n${arcs}\n      </g>`
+    const uses = tileUsePositions(R, rowStep, shared.lineThickness / 2)
+      .map(([x, y]) => `      <use href="#seigaiha-scale" xlink:href="#seigaiha-scale" x="${f(x)}" y="${f(y)}" />`)
+      .join('\n')
 
     // Horizontal period is 2R; vertical period is two staggered rows = 2*rowStep.
-    const defs = `    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
-${inner}
+    const defs = `    <g id="seigaiha-scale" ${sa}>
+${arcs}
+    </g>
+    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
+${uses}
     </pattern>\n`
     const body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
     return { defs, body }

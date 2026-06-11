@@ -14,7 +14,8 @@ export function buildDocument(shared, geom) {
       ? `  <rect x="0" y="0" width="${f(W)}" height="${f(H)}" fill="${escapeAttr(background)}" />\n`
       : ''
 
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">
+  // xmlns:xlink lets generators emit xlink:href fallbacks for pre-SVG2 tools.
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">
 ${defs}${bgRect}${geom.body}</svg>`
 
   if (outlineStrokes) svg = outlineSvgStrokes(svg)
@@ -27,14 +28,14 @@ ${defs}${bgRect}${geom.body}</svg>`
 // pattern's nesting. Browser-only; returns the input unchanged on failure.
 export function outlineSvgStrokes(svgStr) {
   if (typeof document === 'undefined') return svgStr
+  const NS = 'http://www.w3.org/2000/svg'
+  const measure = document.createElementNS(NS, 'svg')
+  measure.style.cssText = 'position:absolute;left:-99999px;width:10px;height:10px'
+  document.body.appendChild(measure)
   try {
-    const NS = 'http://www.w3.org/2000/svg'
     const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml')
     const root = doc.documentElement
 
-    const measure = document.createElementNS(NS, 'svg')
-    measure.style.cssText = 'position:absolute;left:-99999px;width:10px;height:10px'
-    document.body.appendChild(measure)
     const probe = document.createElementNS(NS, 'path')
     measure.appendChild(probe)
 
@@ -74,10 +75,11 @@ export function outlineSvgStrokes(svgStr) {
       g.removeAttribute('fill')
     })
 
-    document.body.removeChild(measure)
     return new XMLSerializer().serializeToString(doc)
   } catch {
     return svgStr
+  } finally {
+    measure.remove()
   }
 }
 
