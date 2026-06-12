@@ -8,18 +8,64 @@ import { f, escapeAttr } from './svg.js'
 // `geom` = { defs?: string, body: string }. Shared owns dimensions + background.
 export function buildDocument(shared, geom) {
   const { W, H, background, transparent, outlineStrokes } = shared
-  const defs = geom.defs ? `  <defs>\n${geom.defs}  </defs>\n` : ''
   const bgRect =
     !transparent && background
       ? `  <rect x="0" y="0" width="${f(W)}" height="${f(H)}" fill="${escapeAttr(background)}" />\n`
       : ''
 
+  let extraDefs = ''
+  let content = bgRect + geom.body
+  if (shared.border) {
+    const b = borderGeometry(shared)
+    // Background + pattern are clipped to the border's outer shape, so a
+    // circular border leaves the corners genuinely empty (transparent in PNG).
+    extraDefs = `    <clipPath id="border-clip"><path d="${b.outer}" /></clipPath>\n`
+    content = `  <g clip-path="url(#border-clip)">\n${content}  </g>\n${b.ring}`
+  }
+
+  const defs =
+    geom.defs || extraDefs ? `  <defs>\n${geom.defs || ''}${extraDefs}  </defs>\n` : ''
+
   // xmlns:xlink lets generators emit xlink:href fallbacks for pre-SVG2 tools.
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">
-${defs}${bgRect}${geom.body}</svg>`
+${defs}${content}</svg>`
 
   if (outlineStrokes) svg = outlineSvgStrokes(svg)
   return svg
+}
+
+// Border = a filled annulus (outer ring minus inner ring, evenodd), not a
+// stroked rect: it passes through the outline-strokes export untouched and
+// reaches Illustrator as a closed shape. `borderShape` morphs the corner
+// radius from 0% (sharp rectangle) to 100% (fully circular / stadium).
+function borderGeometry(shared) {
+  const { W, H, borderShape, borderColor } = shared
+  const t = Math.min(shared.borderThickness, Math.min(W, H) / 2)
+  const r = ((borderShape ?? 0) / 100) * (Math.min(W, H) / 2)
+  const outer = roundedRectPath(0, 0, W, H, r)
+  const iw = W - 2 * t
+  const ih = H - 2 * t
+  // Inner radius shrinks with thickness so the rim has constant width.
+  const inner = iw > 0 && ih > 0 ? roundedRectPath(t, t, iw, ih, Math.max(0, r - t)) : ''
+  const ring = `  <path d="${outer}${inner ? ' ' + inner : ''}" fill-rule="evenodd" fill="${escapeAttr(borderColor)}" />\n`
+  return { outer, ring }
+}
+
+// Rounded-rect path data with radius clamped to the half-extent; r = 0 emits
+// a plain rectangle (no zero-radius arc segments).
+function roundedRectPath(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, Math.min(w, h) / 2))
+  if (r === 0) {
+    return `M ${f(x)} ${f(y)} H ${f(x + w)} V ${f(y + h)} H ${f(x)} Z`
+  }
+  const A = `A ${f(r)} ${f(r)} 0 0 1`
+  // Drop zero-length edge segments (fully-round sides) to keep path data clean.
+  const seg = (cmd, from, to) => (f(from) === f(to) ? '' : ` ${cmd} ${f(to)}`)
+  return (
+    `M ${f(x + r)} ${f(y)}${seg('H', x + r, x + w - r)} ${A} ${f(x + w)} ${f(y + r)}` +
+    `${seg('V', y + r, y + h - r)} ${A} ${f(x + w - r)} ${f(y + h)}${seg('H', x + w - r, x + r)} ` +
+    `${A} ${f(x)} ${f(y + h - r)}${seg('V', y + h - r, y + r)} ${A} ${f(x + r)} ${f(y)} Z`
+  )
 }
 
 // Convert stroked <path> centerlines into filled outline shapes so Illustrator
