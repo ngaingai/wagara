@@ -8,12 +8,13 @@ import { patternR, buildScalePaths, tileUsePositions, waterfallCenter, waterfall
 
 function defaultParams() {
   return {
-    mode: 'fan', // 'fan' | 'pattern'
+    mode: 'pattern', // 'fan' | 'pattern'
     // pattern sub-mode
-    density: 10,
+    density: 3,
     arcCount: 6,
-    rowStep: 0.6, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
+    rowStep: 0.5, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
     waterfall: false, // one wave (top-right-most) flows down over the field
+    hideRight: false, // fill everything right of the waterfall with the background
     // fan sub-mode
     cx: 350, // 0.35 * default W
     cy: 550, // 0.55 * default H
@@ -81,6 +82,12 @@ const controls = [
     label: 'Waterfall (top-right wave flows down over the field)',
     when: isPattern,
   },
+  {
+    type: 'checkbox',
+    key: 'hideRight',
+    label: 'Hide waves to the right of the waterfall',
+    when: (p) => isPattern(p) && p.waterfall,
+  },
 
   // Fan sub-mode
   {
@@ -147,6 +154,11 @@ function build(params, shared) {
     const R = patternR(shared.W, params.density)
     const n = Math.max(1, Math.round(params.arcCount))
     const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
+    // The whole body is shifted down by offsetY in export.js. Extend the field
+    // (and the waterfall's hide-right blank) up by the same amount so the tiling
+    // keeps filling the top instead of leaving a blank strip — the nudge just
+    // re-phases the pattern so the previously-clipped top wave drops into view.
+    const oy = shared.offsetY || 0
 
     // Every scale in the lattice shows identical visible spans (glide
     // invariance — see geometry.js), so the trimmed line-work is computed once
@@ -166,7 +178,7 @@ ${arcs}
     <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${uses}
     </pattern>\n`
-    let body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
+    let body = `  <rect x="0" y="${f(-oy)}" width="${f(shared.W)}" height="${f(shared.H + oy)}" fill="url(#seigaiha-tile)" />\n`
 
     // Waterfall: one wave redrawn in front of the field, its arcs continuing as
     // vertical falls to the bottom edge. Painted after the pattern rect so it
@@ -176,6 +188,21 @@ ${uses}
     if (params.waterfall) {
       const [wx, wy] = waterfallCenter(R, rowStep, shared.W)
       const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, shared.H)
+      // Optionally blank the field to the right of the waterfall. The cut traces
+      // the waterfall's own silhouette — up the outer wall (wx+R), around the
+      // outer crest arc, then straight up the inner wall (wx). That inner-wall
+      // line lands on the seam between the staggered scales in the row above, so
+      // the field above the crest is cut cleanly instead of leaving stray arcs.
+      // Painted before the waterfall so its falls still draw on top.
+      if (params.hideRight) {
+        const rx = wx + R
+        const ty = wy - R
+        const blank =
+          `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} ` +
+          `L ${f(rx)} ${f(shared.H)} L ${f(rx)} ${f(wy)} ` +
+          `A ${f(R)} ${f(R)} 0 0 0 ${f(wx)} ${f(ty)} Z`
+        body += `  <path d="${blank}" fill="${escapeAttr(shared.background)}" stroke="none" />\n`
+      }
       const falls = arcs.map((d) => `      <path d="${d}" />`).join('\n')
       body +=
         `  <g id="seigaiha-waterfall">\n` +

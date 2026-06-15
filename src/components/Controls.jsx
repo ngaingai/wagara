@@ -17,7 +17,9 @@ function clamp(v, min, max) {
 export function ControlList({ controls, values, onChange, shared }) {
   return controls
     .filter((c) => !c.when || c.when(values, shared))
-    .map((c, i) => <Control key={c.key || c.type + i} control={c} values={values} onChange={onChange} shared={shared} />)
+    .map((c, i) => (
+      <Control key={`${c.type}-${c.key ?? i}`} control={c} values={values} onChange={onChange} shared={shared} />
+    ))
 }
 
 function Control({ control, values, onChange, shared }) {
@@ -89,6 +91,39 @@ function Control({ control, values, onChange, shared }) {
           />
         </label>
       )
+
+    case 'swatches': {
+      // Clickable colour chips (c.colors → fixed colours) and/or copy buttons
+      // (c.from → read another shared key's current value). All write c.key.
+      const apply = (value) => {
+        onChange(c.key, value)
+        if (c.alsoSet) for (const [k, v] of Object.entries(c.alsoSet)) onChange(k, v)
+      }
+      const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase()
+      return (
+        <div className="ctrl">
+          {c.label && <span className="ctrl-label">{c.label}</span>}
+          <div className="swatches">
+            {c.colors?.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className={same(val, color) ? 'swatch active' : 'swatch'}
+                style={{ background: color }}
+                title={color}
+                aria-label={color}
+                onClick={() => apply(color)}
+              />
+            ))}
+            {c.from?.map((src) => (
+              <button key={src.key} type="button" className="swatch-copy" onClick={() => apply(values[src.key])}>
+                {src.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    }
 
     case 'checkbox':
       return (
