@@ -3,8 +3,8 @@
 // but to the rest of the app it's just one generator behind the uniform
 // interface described in core/registry.js.
 
-import { strokeAttrs, f } from '../../core/svg.js'
-import { patternR, buildScalePaths, tileUsePositions, waterfallCenter, ringPath } from './geometry.js'
+import { strokeAttrs, f, escapeAttr } from '../../core/svg.js'
+import { patternR, buildScalePaths, tileUsePositions, waterfallCenter, waterfallPaths, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
@@ -168,18 +168,20 @@ ${uses}
     </pattern>\n`
     let body = `  <rect x="0" y="0" width="${f(shared.W)}" height="${f(shared.H)}" fill="url(#seigaiha-tile)" />\n`
 
-    // Waterfall: one wave redrawn whole in front of the field, its arcs
-    // continuing as vertical falls to the bottom edge. Painted after the
-    // pattern rect so it flows over the rows below it.
+    // Waterfall: one wave redrawn in front of the field, its arcs continuing as
+    // vertical falls to the bottom edge. Painted after the pattern rect so it
+    // flows over the rows below it. The crest is trimmed to the field's visible
+    // spans so it blends in (no overlap onto neighbours); a background-filled
+    // silhouette behind the falls hides the field so the column reads as solid.
     if (params.waterfall) {
       const [wx, wy] = waterfallCenter(R, rowStep, shared.W)
-      const straighten = { dir: 'down', toEdge: true, length: 0, H: shared.H }
-      const falls = []
-      for (let i = 1; i <= n; i++) {
-        const d = ringPath(wx, wy, (R * i) / n, 180, 360, straighten)
-        falls.push(`      <path d="${d}" />`)
-      }
-      body += `  <g id="seigaiha-waterfall" ${sa}>\n${falls.join('\n')}\n  </g>\n`
+      const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, shared.H)
+      const falls = arcs.map((d) => `      <path d="${d}" />`).join('\n')
+      body +=
+        `  <g id="seigaiha-waterfall">\n` +
+        `    <path d="${fill}" fill="${escapeAttr(shared.background)}" stroke="none" />\n` +
+        `    <g ${sa}>\n${falls}\n    </g>\n` +
+        `  </g>\n`
     }
     return { defs, body }
   }

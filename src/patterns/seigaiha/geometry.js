@@ -38,9 +38,11 @@ export function patternR(W, density) {
 // participates. A front scale whose top (oy − R) is below the baseline hides
 // nothing, which bounds the occluder rows; dist < 2R bounds the columns. The
 // enumeration below is slightly generous and lets the span math discard the rest.
-export function buildScalePaths(R, n, rowStep = R) {
-  const TWO_PI = Math.PI * 2
+const TWO_PI = Math.PI * 2
 
+// Front (lower-row) scales that can occlude a canonical scale at the origin.
+// Only lower rows (oy > 0) sit in front; dist < 2R bounds which ones reach.
+function occludersFor(R, rowStep) {
   const occluders = []
   const maxRow = Math.ceil(R / rowStep) + 1
   for (let j = 1; j <= maxRow; j++) {
@@ -52,55 +54,97 @@ export function buildScalePaths(R, n, rowStep = R) {
       if (dist > 0 && dist < 2 * R) occluders.push({ ox, oy, dist })
     }
   }
+  return occluders
+}
 
-  // sub-intervals of the upper semicircle [PI, 2PI] left visible after every occluder
-  const visibleSpans = (r) => {
-    const occ = []
-    for (const { ox, oy, dist } of occluders) {
-      if (dist >= R + r) continue
-      occ.push({ alpha: Math.atan2(-oy, -ox), T: (R * R - dist * dist - r * r) / (2 * r * dist) })
-    }
-    const crit = new Set([Math.PI, TWO_PI])
-    for (const { alpha, T } of occ) {
-      if (T > -1 && T < 1) {
-        const beta = Math.acos(T)
-        for (let k = -1; k <= 2; k++) {
-          for (const s of [1, -1]) {
-            const a = alpha + s * beta + TWO_PI * k
-            if (a >= Math.PI - 1e-9 && a <= TWO_PI + 1e-9) crit.add(Math.min(Math.max(a, Math.PI), TWO_PI))
-          }
+// Sub-intervals of the upper semicircle [PI, 2PI] of a radius-r arc that stay
+// visible after every occluder, in the canonical origin frame.
+function visibleSpans(R, occluders, r) {
+  const occ = []
+  for (const { ox, oy, dist } of occluders) {
+    if (dist >= R + r) continue
+    occ.push({ alpha: Math.atan2(-oy, -ox), T: (R * R - dist * dist - r * r) / (2 * r * dist) })
+  }
+  const crit = new Set([Math.PI, TWO_PI])
+  for (const { alpha, T } of occ) {
+    if (T > -1 && T < 1) {
+      const beta = Math.acos(T)
+      for (let k = -1; k <= 2; k++) {
+        for (const s of [1, -1]) {
+          const a = alpha + s * beta + TWO_PI * k
+          if (a >= Math.PI - 1e-9 && a <= TWO_PI + 1e-9) crit.add(Math.min(Math.max(a, Math.PI), TWO_PI))
         }
       }
     }
-    const cs = [...crit].sort((p, q) => p - q)
-    const spans = []
-    for (let j = 0; j < cs.length - 1; j++) {
-      const a = cs[j]
-      const b = cs[j + 1]
-      if (b - a < 1e-6) continue
-      const mid = 0.5 * (a + b)
-      const visible = occ.every(({ alpha, T }) => !(Math.cos(mid - alpha) < T))
-      if (visible) {
-        if (spans.length && Math.abs(spans[spans.length - 1][1] - a) < 1e-6) spans[spans.length - 1][1] = b
-        else spans.push([a, b])
-      }
-    }
-    return spans
   }
+  const cs = [...crit].sort((p, q) => p - q)
+  const spans = []
+  for (let j = 0; j < cs.length - 1; j++) {
+    const a = cs[j]
+    const b = cs[j + 1]
+    if (b - a < 1e-6) continue
+    const mid = 0.5 * (a + b)
+    const visible = occ.every(({ alpha, T }) => !(Math.cos(mid - alpha) < T))
+    if (visible) {
+      if (spans.length && Math.abs(spans[spans.length - 1][1] - a) < 1e-6) spans[spans.length - 1][1] = b
+      else spans.push([a, b])
+    }
+  }
+  return spans
+}
 
+const arcTo = (cx, cy, r, a, b) => {
+  const sx = cx + r * Math.cos(a)
+  const sy = cy + r * Math.sin(a)
+  const ex = cx + r * Math.cos(b)
+  const ey = cy + r * Math.sin(b)
+  const large = b - a > Math.PI ? 1 : 0
+  return { ex, ey, d: `M ${f(sx)} ${f(sy)} A ${f(r)} ${f(r)} 0 ${large} 1 ${f(ex)} ${f(ey)}` }
+}
+
+export function buildScalePaths(R, n, rowStep = R) {
+  const occluders = occludersFor(R, rowStep)
   const paths = []
   for (let i = 1; i <= n; i++) {
     const r = (R * i) / n
-    for (const [a, b] of visibleSpans(r)) {
-      const sx = r * Math.cos(a)
-      const sy = r * Math.sin(a)
-      const ex = r * Math.cos(b)
-      const ey = r * Math.sin(b)
-      const large = b - a > Math.PI ? 1 : 0
-      paths.push(`M ${f(sx)} ${f(sy)} A ${f(r)} ${f(r)} 0 ${large} 1 ${f(ex)} ${f(ey)}`)
+    for (const [a, b] of visibleSpans(R, occluders, r)) {
+      paths.push(arcTo(0, 0, r, a, b).d)
     }
   }
   return paths
+}
+
+// Waterfall line-work for the scale at (wx, wy). Each arc is trimmed on its
+// left/lower edge to the SAME visible spans the field uses, so the crest sits in
+// the pattern with no overlap onto its neighbours. The rightmost visible span is
+// then extended to 3 o'clock and pours straight down to the bottom edge — the
+// fall flows over the field below, where the silhouette fill (see below) hides
+// it. Returns { arcs: pathData[], fill: silhouettePathData }.
+export function waterfallPaths(R, n, rowStep, wx, wy, H) {
+  const occluders = occludersFor(R, rowStep)
+  // Inner edge of the column: the degenerate r=0 fall down the fan centerline,
+  // so the waterfall is stroked on both walls (the outermost fall is the right
+  // wall) and the falls stay evenly spaced (wx, wx+R/n, …, wx+R).
+  const arcs = [`M ${f(wx)} ${f(wy)} L ${f(wx)} ${f(H)}`]
+  for (let i = 1; i <= n; i++) {
+    const r = (R * i) / n
+    const spans = visibleSpans(R, occluders, r)
+    if (!spans.length) continue
+    const last = spans.length - 1
+    for (let s = 0; s <= last; s++) {
+      const [a, b] = spans[s]
+      // Extend only the rightmost span to 3 o'clock so the fall joins smoothly.
+      const end = s === last ? TWO_PI : b
+      const seg = arcTo(wx, wy, r, a, end)
+      arcs.push(s === last ? `${seg.d} L ${f(seg.ex)} ${f(H)}` : seg.d)
+    }
+  }
+  // Silhouette of the right crest cap + the falling column [wx, wx+R] × [wy, H],
+  // filled with the background so the tiled field never shows between the bars.
+  const fill =
+    `M ${f(wx)} ${f(wy - R)} A ${f(R)} ${f(R)} 0 0 1 ${f(wx + R)} ${f(wy)} ` +
+    `L ${f(wx + R)} ${f(H)} L ${f(wx)} ${f(H)} Z`
+  return { arcs, fill }
 }
 
 // Lattice translates whose scale can paint inside the tile [0,2R] × [0,2·rowStep].
