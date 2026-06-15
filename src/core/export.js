@@ -13,8 +13,14 @@ export function buildDocument(shared, geom) {
       ? `  <rect x="0" y="0" width="${f(W)}" height="${f(H)}" fill="${escapeAttr(background)}" />\n`
       : ''
 
+  // Nudge only the pattern down; the background + border stay as the fixed frame,
+  // so the offset reveals background at the top and shows the full top wave.
+  const bodyContent = shared.offsetY
+    ? `  <g transform="translate(0, ${f(shared.offsetY)})">\n${geom.body}  </g>\n`
+    : geom.body
+
   let extraDefs = ''
-  let content = bgRect + geom.body
+  let content = bgRect + bodyContent
   if (shared.border) {
     const b = borderGeometry(shared)
     // Background + pattern are clipped to the border's outer shape, so a

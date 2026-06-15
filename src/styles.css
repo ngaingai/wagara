@@ -147,6 +147,40 @@ body {
   gap: 10px;
 }
 
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.swatch.active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.swatch-copy {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.swatch-copy:hover {
+  border-color: var(--accent);
+}
+
 .seg {
   display: flex;
   border: 1px solid var(--line);
