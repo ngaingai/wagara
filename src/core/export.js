@@ -13,11 +13,13 @@ export function buildDocument(shared, geom) {
       ? `  <rect x="0" y="0" width="${f(W)}" height="${f(H)}" fill="${escapeAttr(background)}" />\n`
       : ''
 
-  // Nudge only the pattern down; the background + border stay as the fixed frame,
-  // so the offset reveals background at the top and shows the full top wave.
-  const bodyContent = shared.offsetY
-    ? `  <g transform="translate(0, ${f(shared.offsetY)})">\n${geom.body}  </g>\n`
-    : geom.body
+  // Nudge only the pattern; the background + border stay as the fixed frame.
+  // The generator extends its field to fill the revealed edge (see seigaiha),
+  // so the offset re-phases the pattern rather than leaving a blank strip.
+  const ox = shared.offsetX || 0
+  const oy = shared.offsetY || 0
+  const bodyContent =
+    ox || oy ? `  <g transform="translate(${f(ox)}, ${f(oy)})">\n${geom.body}  </g>\n` : geom.body
 
   let extraDefs = ''
   let content = bgRect + bodyContent

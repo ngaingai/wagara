@@ -154,10 +154,12 @@ function build(params, shared) {
     const R = patternR(shared.W, params.density)
     const n = Math.max(1, Math.round(params.arcCount))
     const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
-    // The whole body is shifted down by offsetY in export.js. Extend the field
-    // (and the waterfall's hide-right blank) up by the same amount so the tiling
-    // keeps filling the top instead of leaving a blank strip — the nudge just
-    // re-phases the pattern so the previously-clipped top wave drops into view.
+    // The whole body is shifted right/down by offsetX/offsetY in export.js.
+    // Extend the field (and the waterfall's hide-right blank) up and to the left
+    // by the same amounts so the tiling keeps filling the revealed edges instead
+    // of leaving a blank strip — the nudge just re-phases the pattern, e.g. so a
+    // previously-clipped top wave drops fully into view.
+    const ox = shared.offsetX || 0
     const oy = shared.offsetY || 0
 
     // Every scale in the lattice shows identical visible spans (glide
@@ -178,7 +180,7 @@ ${arcs}
     <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${uses}
     </pattern>\n`
-    let body = `  <rect x="0" y="${f(-oy)}" width="${f(shared.W)}" height="${f(shared.H + oy)}" fill="url(#seigaiha-tile)" />\n`
+    let body = `  <rect x="${f(-ox)}" y="${f(-oy)}" width="${f(shared.W + ox)}" height="${f(shared.H + oy)}" fill="url(#seigaiha-tile)" />\n`
 
     // Waterfall: one wave redrawn in front of the field, its arcs continuing as
     // vertical falls to the bottom edge. Painted after the pattern rect so it

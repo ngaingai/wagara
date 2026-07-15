@@ -12,6 +12,7 @@ export function defaultShared() {
     lineThickness: 8,
     background: '#ffffff',
     transparent: false,
+    offsetX: 0, // nudge the pattern right (mirrors offsetY)
     offsetY: 0, // nudge the pattern down so a thick top wave/border isn't clipped
     border: false,
     borderThickness: 24,
@@ -86,6 +87,15 @@ export const sharedControls = [
     label: 'Nudge down',
     min: 0,
     max: (s) => Math.round(s.H / 2),
+    step: 1,
+    suffix: 'px',
+  },
+  {
+    type: 'slider',
+    key: 'offsetX',
+    label: 'Nudge right',
+    min: 0,
+    max: (s) => Math.round(s.W / 2),
     step: 1,
     suffix: 'px',
   },
