@@ -4,10 +4,28 @@
 
 import { f, escapeAttr } from './svg.js'
 
+// Output dimensions after a 90°-increment canvas rotation: 90°/270° swap W↔H,
+// 0°/180° keep them. The rest of the app sizes previews + PNGs from this.
+export function outputSize(shared) {
+  const rot = (((shared.rotation || 0) % 360) + 360) % 360
+  return rot === 90 || rot === 270 ? { W: shared.H, H: shared.W } : { W: shared.W, H: shared.H }
+}
+
+// Group transform that rotates the W×H canvas clockwise by rot° into the
+// (already swapped) output box, then translates it back into view.
+function rotateTransform(rot, W, H) {
+  if (rot === 90) return `translate(${f(H)}, 0) rotate(90)`
+  if (rot === 180) return `translate(${f(W)}, ${f(H)}) rotate(180)`
+  if (rot === 270) return `translate(0, ${f(W)}) rotate(270)`
+  return ''
+}
+
 // Wrap a generator's geometry in a standalone, editable SVG document.
 // `geom` = { defs?: string, body: string }. Shared owns dimensions + background.
 export function buildDocument(shared, geom) {
   const { W, H, background, transparent, outlineStrokes } = shared
+  const rot = (((shared.rotation || 0) % 360) + 360) % 360
+  const out = outputSize(shared)
   const bgRect =
     !transparent && background
       ? `  <rect x="0" y="0" width="${f(W)}" height="${f(H)}" fill="${escapeAttr(background)}" />\n`
@@ -31,11 +49,14 @@ export function buildDocument(shared, geom) {
     content = `  <g clip-path="url(#border-clip)">\n${content}  </g>\n${b.ring}`
   }
 
+  // Rotate the entire canvas (background, pattern, border) as one unit.
+  if (rot) content = `  <g transform="${rotateTransform(rot, W, H)}">\n${content}  </g>\n`
+
   const defs =
     geom.defs || extraDefs ? `  <defs>\n${geom.defs || ''}${extraDefs}  </defs>\n` : ''
 
   // xmlns:xlink lets generators emit xlink:href fallbacks for pre-SVG2 tools.
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${f(out.W)}" height="${f(out.H)}" viewBox="0 0 ${f(out.W)} ${f(out.H)}">
 ${defs}${content}</svg>`
 
   if (outlineStrokes) svg = outlineSvgStrokes(svg)

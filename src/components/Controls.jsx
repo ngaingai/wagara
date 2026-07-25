@@ -125,6 +125,29 @@ function Control({ control, values, onChange, shared }) {
       )
     }
 
+    case 'rotate': {
+      // Two buttons stepping the angle by ±step° (default 90), wrapped to 0–359.
+      const step = c.step || 90
+      const cur = (((val || 0) % 360) + 360) % 360
+      const turn = (d) => onChange(c.key, (((cur + d) % 360) + 360) % 360)
+      return (
+        <div className="ctrl">
+          <span className="ctrl-label">
+            {c.label}
+            <em>{cur}°</em>
+          </span>
+          <div className="seg">
+            <button type="button" className="seg-btn" title="Rotate counter-clockwise" onClick={() => turn(-step)}>
+              ⟲ Left
+            </button>
+            <button type="button" className="seg-btn" title="Rotate clockwise" onClick={() => turn(step)}>
+              ⟳ Right
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     case 'checkbox':
       return (
         <label className="ctrl inline">

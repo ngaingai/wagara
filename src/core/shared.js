@@ -14,6 +14,7 @@ export function defaultShared() {
     transparent: false,
     offsetX: 0, // nudge the pattern right (mirrors offsetY)
     offsetY: 0, // nudge the pattern down so a thick top wave/border isn't clipped
+    rotation: 0, // whole-canvas rotation in 90° increments (clockwise)
     border: false,
     borderThickness: 24,
     borderShape: 100, // corner roundness %: 0 = sharp rectangle, 100 = fully circular
@@ -99,6 +100,7 @@ export const sharedControls = [
     step: 1,
     suffix: 'px',
   },
+  { type: 'rotate', key: 'rotation', label: 'Rotate canvas', step: 90 },
   { type: 'slider', key: 'pngScale', label: 'PNG scale', min: 1, max: 4, step: 1, suffix: '×' },
   {
     type: 'checkbox',

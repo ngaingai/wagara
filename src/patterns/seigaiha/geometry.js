@@ -120,11 +120,18 @@ export function buildScalePaths(R, n, rowStep = R) {
 // then extended to 3 o'clock and pours straight down to the bottom edge — the
 // fall flows over the field below, where the silhouette fill (see below) hides
 // it. Returns { arcs: pathData[], fill: silhouettePathData }.
-export function waterfallPaths(R, n, rowStep, wx, wy, H) {
+//
+// `rot` (degrees) turns the crest to match a field rotated about THIS SAME point
+// (wx, wy): the trimmed spans are the field's own occlusion spans, so rotating
+// both by the same angle about the same centre keeps the crest seamless. The
+// falls stay vertical because each is drawn `L ex H` from its (rotated) end, and
+// the inner wall (r = 0) is rotation-invariant.
+export function waterfallPaths(R, n, rowStep, wx, wy, H, rot = 0) {
+  const rr = rad(rot)
   const occluders = occludersFor(R, rowStep)
   // Inner edge of the column: the degenerate r=0 fall down the fan centerline,
   // so the waterfall is stroked on both walls (the outermost fall is the right
-  // wall) and the falls stay evenly spaced (wx, wx+R/n, …, wx+R).
+  // wall) and the falls stay evenly spaced.
   const arcs = [`M ${f(wx)} ${f(wy)} L ${f(wx)} ${f(H)}`]
   for (let i = 1; i <= n; i++) {
     const r = (R * i) / n
@@ -135,15 +142,17 @@ export function waterfallPaths(R, n, rowStep, wx, wy, H) {
       const [a, b] = spans[s]
       // Extend only the rightmost span to 3 o'clock so the fall joins smoothly.
       const end = s === last ? TWO_PI : b
-      const seg = arcTo(wx, wy, r, a, end)
+      const seg = arcTo(wx, wy, r, a + rr, end + rr)
       arcs.push(s === last ? `${seg.d} L ${f(seg.ex)} ${f(H)}` : seg.d)
     }
   }
-  // Silhouette of the right crest cap + the falling column [wx, wx+R] × [wy, H],
+  // Silhouette of the (rotated) right crest cap + the vertical falling column,
   // filled with the background so the tiled field never shows between the bars.
+  const [ctx, cty] = pt(wx, wy, R, 270 + rot)
+  const [rex, rey] = pt(wx, wy, R, 360 + rot)
   const fill =
-    `M ${f(wx)} ${f(wy - R)} A ${f(R)} ${f(R)} 0 0 1 ${f(wx + R)} ${f(wy)} ` +
-    `L ${f(wx + R)} ${f(H)} L ${f(wx)} ${f(H)} Z`
+    `M ${f(ctx)} ${f(cty)} A ${f(R)} ${f(R)} 0 0 1 ${f(rex)} ${f(rey)} ` +
+    `L ${f(rex)} ${f(H)} L ${f(wx)} ${f(H)} L ${f(wx)} ${f(wy)} Z`
   return { arcs, fill }
 }
 

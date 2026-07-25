@@ -13,6 +13,7 @@ function defaultParams() {
     density: 3,
     arcCount: 6,
     rowStep: 0.5, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
+    waveRotation: 0, // free rotation of the wave field only; waterfall stays vertical
     waterfall: false, // one wave (top-right-most) flows down over the field
     hideRight: false, // fill everything right of the waterfall with the background
     // fan sub-mode
@@ -75,6 +76,21 @@ const controls = [
     when: isPattern,
     text: (p, shared) =>
       `Tile ${2 * patternR(shared.W, p.density)} × ${(2 * patternR(shared.W, p.density) * p.rowStep).toFixed(0)} (period 2R × 2·rowStep)`,
+  },
+  {
+    type: 'slider',
+    key: 'waveRotation',
+    label: 'Wave rotation (free)',
+    min: 0,
+    max: 360,
+    step: 1,
+    suffix: '°',
+    when: isPattern,
+  },
+  {
+    type: 'note',
+    when: (p) => isPattern(p) && p.waveRotation && p.waterfall,
+    text: () => 'The wave field spins freely; the waterfall stays vertical. Use the shared 90° buttons to turn the whole canvas.',
   },
   {
     type: 'checkbox',
@@ -161,6 +177,16 @@ function build(params, shared) {
     // previously-clipped top wave drops fully into view.
     const ox = shared.offsetX || 0
     const oy = shared.offsetY || 0
+    // Free rotation of the wave field only. Rotate the tile grid via
+    // patternTransform about the waterfall centre (wx, wy) — a lattice scale
+    // centre — so that scale stays put while the field turns around it. The
+    // waterfall crest, built from the same occlusion spans and rotated by the
+    // same angle about the same point, then blends seamlessly into the field;
+    // only the vertical falls stay locked. (No waterfall → any centre looks the
+    // same, since the tiling is infinite.)
+    const wr = (((params.waveRotation || 0) % 360) + 360) % 360
+    const [wx, wy] = waterfallCenter(R, rowStep, shared.W)
+    const patternRot = wr ? ` patternTransform="rotate(${f(wr)}, ${f(wx)}, ${f(wy)})"` : ''
 
     // Every scale in the lattice shows identical visible spans (glide
     // invariance — see geometry.js), so the trimmed line-work is computed once
@@ -177,7 +203,7 @@ function build(params, shared) {
     const defs = `    <g id="seigaiha-scale" ${sa}>
 ${arcs}
     </g>
-    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse" width="${f(2 * R)}" height="${f(2 * rowStep)}">
+    <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse"${patternRot} width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${uses}
     </pattern>\n`
     let body = `  <rect x="${f(-ox)}" y="${f(-oy)}" width="${f(shared.W + ox)}" height="${f(shared.H + oy)}" fill="url(#seigaiha-tile)" />\n`
@@ -188,21 +214,29 @@ ${uses}
     // spans so it blends in (no overlap onto neighbours); a background-filled
     // silhouette behind the falls hides the field so the column reads as solid.
     if (params.waterfall) {
-      const [wx, wy] = waterfallCenter(R, rowStep, shared.W)
-      const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, shared.H)
-      // Optionally blank the field to the right of the waterfall. The cut traces
-      // the waterfall's own silhouette — up the outer wall (wx+R), around the
-      // outer crest arc, then straight up the inner wall (wx). That inner-wall
-      // line lands on the seam between the staggered scales in the row above, so
-      // the field above the crest is cut cleanly instead of leaving stray arcs.
-      // Painted before the waterfall so its falls still draw on top.
+      // The crest turns with the field (see waterfallPaths); the falls stay
+      // vertical. wx, wy computed above (the field's rotation centre).
+      const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, shared.H, wr)
+      // Optionally blank the field to the right of the waterfall.
       if (params.hideRight) {
-        const rx = wx + R
-        const ty = wy - R
-        const blank =
-          `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} ` +
-          `L ${f(rx)} ${f(shared.H)} L ${f(rx)} ${f(wy)} ` +
-          `A ${f(R)} ${f(R)} 0 0 0 ${f(wx)} ${f(ty)} Z`
+        let blank
+        if (wr) {
+          // Rotated: blank everything right of the inner wall (wx). The rotated
+          // crest cap fill + arcs are redrawn on top, and the crest's left half
+          // (x < wx) still blends into the field on the left.
+          blank = `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} L ${f(wx)} ${f(shared.H)} Z`
+        } else {
+          // Trace the upright waterfall's silhouette — up the outer wall (wx+R),
+          // around the outer crest arc, then straight up the inner wall (wx).
+          // That inner-wall line lands on the seam between the staggered scales
+          // in the row above, so the field above the crest is cut cleanly.
+          const rx = wx + R
+          const ty = wy - R
+          blank =
+            `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} ` +
+            `L ${f(rx)} ${f(shared.H)} L ${f(rx)} ${f(wy)} ` +
+            `A ${f(R)} ${f(R)} 0 0 0 ${f(wx)} ${f(ty)} Z`
+        }
         body += `  <path d="${blank}" fill="${escapeAttr(shared.background)}" stroke="none" />\n`
       }
       const falls = arcs.map((d) => `      <path d="${d}" />`).join('\n')

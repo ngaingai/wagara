@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { listPatterns, getPattern } from './patterns/index.js'
 import { defaultShared, sharedControls } from './core/shared.js'
-import { buildDocument, downloadSvg, downloadPng, pngWarning } from './core/export.js'
+import { buildDocument, downloadSvg, downloadPng, pngWarning, outputSize } from './core/export.js'
 import { ControlList } from './components/Controls.jsx'
 
 // Seed per-pattern params so edits survive switching patterns.
@@ -55,7 +55,8 @@ export default function App() {
   const onExportPng = async () => {
     setBusy(true)
     try {
-      await downloadPng(buildDocument(shared, geom), shared.W, shared.H, shared.pngScale, `${patternId}.png`)
+      const out = outputSize(shared)
+      await downloadPng(buildDocument(shared, geom), out.W, out.H, shared.pngScale, `${patternId}.png`)
     } catch (e) {
       alert('PNG export failed: ' + e.message)
     } finally {
