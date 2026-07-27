@@ -181,6 +181,49 @@ body {
   border-color: var(--accent);
 }
 
+.sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.size {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+  color: inherit;
+  cursor: pointer;
+}
+
+.size:hover {
+  border-color: var(--accent);
+}
+
+.size em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.size.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.size.active em {
+  color: rgba(255, 255, 255, 0.75);
+}
+
 .seg {
   display: flex;
   border: 1px solid var(--line);

@@ -4,6 +4,18 @@
 // Hashi brand palette — offered as one-click swatches for stroke + background.
 export const HASHI_COLORS = ['#1B2845', '#037171', '#8A8576', '#F2EBDD', '#B8693F']
 
+// One-click canvas dimensions. Square is the default and covers most web use;
+// the rest are social profile banners, whose wide aspect ratios are the reason
+// W and H are independent. Pair a banner with a pattern's fixed wave size (see
+// seigaiha's "Lock wave size") to widen the field without enlarging the motif.
+export const CANVAS_SIZES = [
+  { label: 'Square', W: 1000, H: 1000 },
+  { label: 'X header', W: 1500, H: 500 },
+  { label: 'LinkedIn', W: 1584, H: 396 },
+  { label: 'YouTube', W: 2560, H: 1440 },
+  { label: 'FB cover', W: 851, H: 315 },
+]
+
 export function defaultShared() {
   return {
     W: 1000,
@@ -75,6 +87,7 @@ export const sharedControls = [
     ],
     when: (v) => v.border,
   },
+  { type: 'sizes', key: 'W', label: 'Canvas size', options: CANVAS_SIZES },
   {
     type: 'row',
     children: [
@@ -94,8 +107,8 @@ export const sharedControls = [
   {
     type: 'slider',
     key: 'offsetX',
-    label: 'Nudge right',
-    min: 0,
+    label: 'Nudge horizontal (− left / + right)',
+    min: (s) => -Math.round(s.W / 2),
     max: (s) => Math.round(s.W / 2),
     step: 1,
     suffix: 'px',

@@ -59,9 +59,35 @@ optionally outlines strokes. None of that has pattern-specific logic.
 ### Control schema
 
 Controls are data, not JSX, so the panel renders them generically. Supported
-types: `slider`, `number`, `color`, `checkbox`, `toggle`, `background`, `row`,
-`note`. `min`/`max` may be a number or `(shared) => number`. `when(params,
-shared)` conditionally shows a control.
+types: `slider`, `number`, `color`, `checkbox`, `toggle`, `background`,
+`swatches`, `sizes`, `rotate`, `row`, `note`. `min`/`max` may be a number or
+`(shared) => number`. `when(params, shared)` conditionally shows a control.
+A `checkbox` may carry `onEnable: (values, shared) => ({ key: value })` to seed
+sibling values from the current state when it's ticked, so switching a mode on
+carries the current look over instead of snapping to that mode's default.
+
+### Canvas size and pattern scale
+
+`sizes` (see `CANVAS_SIZES` in `core/shared.js`) sets `W`/`H` together for the
+square default and the social banner shapes. Canvas size changes are clamped in
+`App.jsx`, so the values bounded by the canvas (`offsetX`, `offsetY`,
+`borderThickness`) can't outlive a shrink.
+
+`offsetX` is signed — negative nudges left, positive right — while `offsetY` is
+positive-only (down). `core/export.js` just translates the body by the pair; it
+is the *generator's* job to extend its field to cover whichever edge the nudge
+reveals, or a blank strip appears there. Seigaiha does this by tiling the union
+of the nudged and unnudged canvas rects (`fx`/`fy`/`fr`/`fb` in its `build`),
+taking min/max rather than assuming a sign, which is what makes a negative
+offset safe. Widening `offsetY` to negative is the same one-line range change
+in `sharedControls` — the field math already handles it.
+
+Widening the canvas is separate from how big the motif is. A generator that
+derives its scale from `shared.W` will enlarge its motif on a wide canvas rather
+than tiling more of it — seigaiha's `patternR(W, density)` does exactly that. It
+also offers `lockedR(waveSize)`, selected by the `lockWaveSize` param, which
+pins the radius in px so a banner extends the field sideways at a fixed motif
+size. New patterns that scale off `W` should offer the same choice.
 
 ### Adding a pattern
 

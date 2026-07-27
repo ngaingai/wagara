@@ -4,13 +4,15 @@
 // interface described in core/registry.js.
 
 import { strokeAttrs, f, escapeAttr } from '../../core/svg.js'
-import { patternR, buildScalePaths, tileUsePositions, waterfallCenter, waterfallPaths, ringPath } from './geometry.js'
+import { patternR, lockedR, buildScalePaths, tileUsePositions, waterfallCenter, waterfallPaths, ringPath } from './geometry.js'
 
 function defaultParams() {
   return {
     mode: 'pattern', // 'fan' | 'pattern'
     // pattern sub-mode
     density: 3,
+    lockWaveSize: false, // pin R in px so a wider canvas adds waves, not size
+    waveSize: 167, // R in px when locked; 167 = patternR(1000, 3), the default
     arcCount: 6,
     rowStep: 0.5, // vertical row step as a fraction of R; <1 overlaps, >1 gaps
     waveRotation: 0, // free rotation of the wave field only; waterfall stays vertical
@@ -36,6 +38,11 @@ const isFan = (p) => p.mode === 'fan'
 const isPattern = (p) => p.mode === 'pattern'
 const whenStraight = (p) => p.mode === 'fan' && p.straighten
 
+// The one place pattern-mode R is decided: scaled to the canvas width by
+// density, or pinned in px when locked. Everything downstream (tile, waterfall,
+// warnings, notes) reads R from here so the two modes can't drift apart.
+const waveRadius = (p, shared) => (p.lockWaveSize ? lockedR(p.waveSize) : patternR(shared.W, p.density))
+
 // Declarative pattern-specific controls. min/max may be (shared) => number.
 const controls = [
   {
@@ -48,8 +55,35 @@ const controls = [
     ],
   },
 
-  // Pattern sub-mode
-  { type: 'slider', key: 'density', label: 'Wave density', min: 2, max: 40, when: isPattern },
+  // Pattern sub-mode. Wave size is set either by density (waves across the
+  // canvas width) or, when locked, directly in px — see waveRadius.
+  {
+    type: 'slider',
+    key: 'density',
+    label: 'Wave density',
+    min: 2,
+    max: 40,
+    when: (p) => isPattern(p) && !p.lockWaveSize,
+  },
+  {
+    type: 'checkbox',
+    key: 'lockWaveSize',
+    label: 'Lock wave size (a wider canvas adds waves instead of enlarging them)',
+    // Seed the px value from the density-derived R so ticking the box doesn't
+    // jump the design — it just freezes what's already on screen.
+    onEnable: (p, shared) => ({ waveSize: patternR(shared.W, p.density) }),
+    when: isPattern,
+  },
+  {
+    type: 'slider',
+    key: 'waveSize',
+    label: 'Wave size (radius)',
+    min: 8,
+    max: (s) => Math.max(100, Math.round(s.W / 2)),
+    step: 1,
+    suffix: 'px',
+    when: (p) => isPattern(p) && p.lockWaveSize,
+  },
   { type: 'slider', key: 'arcCount', label: 'Arc count', min: 1, max: 20, when: isPattern },
   {
     type: 'slider',
@@ -74,8 +108,11 @@ const controls = [
   {
     type: 'note',
     when: isPattern,
-    text: (p, shared) =>
-      `Tile ${2 * patternR(shared.W, p.density)} × ${(2 * patternR(shared.W, p.density) * p.rowStep).toFixed(0)} (period 2R × 2·rowStep)`,
+    text: (p, shared) => {
+      const R = waveRadius(p, shared)
+      const across = Math.round((shared.W / (2 * R)) * 10) / 10
+      return `Tile ${2 * R} × ${(2 * R * p.rowStep).toFixed(0)} (period 2R × 2·rowStep) — R ${R}px, ${across} waves across.`
+    },
   },
   {
     type: 'slider',
@@ -167,16 +204,23 @@ function build(params, shared) {
   const sa = strokeAttrs(shared)
 
   if (params.mode === 'pattern') {
-    const R = patternR(shared.W, params.density)
+    const R = waveRadius(params, shared)
     const n = Math.max(1, Math.round(params.arcCount))
     const rowStep = R * (params.rowStep ?? 0.6) // <R overlaps rows, =R touches, >R gaps
-    // The whole body is shifted right/down by offsetX/offsetY in export.js.
-    // Extend the field (and the waterfall's hide-right blank) up and to the left
-    // by the same amounts so the tiling keeps filling the revealed edges instead
-    // of leaving a blank strip — the nudge just re-phases the pattern, e.g. so a
-    // previously-clipped top wave drops fully into view.
+    // The whole body is shifted by offsetX/offsetY in export.js, so in this
+    // local frame the canvas sits at [-ox, W-ox] × [-oy, H-oy]. Extend the field
+    // (and the waterfall's hide-right blank) to the union of that with the
+    // unnudged canvas, so the tiling keeps filling whichever edge the nudge
+    // reveals instead of leaving a blank strip — the nudge just re-phases the
+    // pattern, e.g. so a previously-clipped top wave drops fully into view.
+    // Taking min/max rather than assuming a sign is what lets the offsets go
+    // negative (nudge left) without dragging the field off the opposite edge.
     const ox = shared.offsetX || 0
     const oy = shared.offsetY || 0
+    const fx = Math.min(0, -ox) // field left  (local)
+    const fy = Math.min(0, -oy) // field top   (local)
+    const fr = Math.max(shared.W, shared.W - ox) // field right
+    const fb = Math.max(shared.H, shared.H - oy) // field bottom
     // Free rotation of the wave field only. Rotate the tile grid via
     // patternTransform about the waterfall centre (wx, wy) — a lattice scale
     // centre — so that scale stays put while the field turns around it. The
@@ -206,7 +250,7 @@ ${arcs}
     <pattern id="seigaiha-tile" patternUnits="userSpaceOnUse"${patternRot} width="${f(2 * R)}" height="${f(2 * rowStep)}">
 ${uses}
     </pattern>\n`
-    let body = `  <rect x="${f(-ox)}" y="${f(-oy)}" width="${f(shared.W + ox)}" height="${f(shared.H + oy)}" fill="url(#seigaiha-tile)" />\n`
+    let body = `  <rect x="${f(fx)}" y="${f(fy)}" width="${f(fr - fx)}" height="${f(fb - fy)}" fill="url(#seigaiha-tile)" />\n`
 
     // Waterfall: one wave redrawn in front of the field, its arcs continuing as
     // vertical falls to the bottom edge. Painted after the pattern rect so it
@@ -216,7 +260,9 @@ ${uses}
     if (params.waterfall) {
       // The crest turns with the field (see waterfallPaths); the falls stay
       // vertical. wx, wy computed above (the field's rotation centre).
-      const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, shared.H, wr)
+      // Falls run to the field bottom, not shared.H, so a nudge up doesn't
+      // leave them ending short of the canvas edge.
+      const { arcs, fill } = waterfallPaths(R, n, rowStep, wx, wy, fb, wr)
       // Optionally blank the field to the right of the waterfall.
       if (params.hideRight) {
         let blank
@@ -224,7 +270,7 @@ ${uses}
           // Rotated: blank everything right of the inner wall (wx). The rotated
           // crest cap fill + arcs are redrawn on top, and the crest's left half
           // (x < wx) still blends into the field on the left.
-          blank = `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} L ${f(wx)} ${f(shared.H)} Z`
+          blank = `M ${f(wx)} ${f(fy)} L ${f(fr)} ${f(fy)} L ${f(fr)} ${f(fb)} L ${f(wx)} ${f(fb)} Z`
         } else {
           // Trace the upright waterfall's silhouette — up the outer wall (wx+R),
           // around the outer crest arc, then straight up the inner wall (wx).
@@ -233,8 +279,8 @@ ${uses}
           const rx = wx + R
           const ty = wy - R
           blank =
-            `M ${f(wx)} ${f(-oy)} L ${f(shared.W)} ${f(-oy)} L ${f(shared.W)} ${f(shared.H)} ` +
-            `L ${f(rx)} ${f(shared.H)} L ${f(rx)} ${f(wy)} ` +
+            `M ${f(wx)} ${f(fy)} L ${f(fr)} ${f(fy)} L ${f(fr)} ${f(fb)} ` +
+            `L ${f(rx)} ${f(fb)} L ${f(rx)} ${f(wy)} ` +
             `A ${f(R)} ${f(R)} 0 0 0 ${f(wx)} ${f(ty)} Z`
         }
         body += `  <path d="${blank}" fill="${escapeAttr(shared.background)}" stroke="none" />\n`
@@ -281,7 +327,7 @@ ${uses}
 function warnings(params, shared) {
   const out = []
   if (params.mode === 'pattern') {
-    const R = patternR(shared.W, params.density)
+    const R = waveRadius(params, shared)
     const n = Math.max(1, Math.round(params.arcCount))
     const spacing = R / n
     if (shared.lineThickness > 0.8 * spacing) {

@@ -12,6 +12,14 @@ export function patternR(W, density) {
   return Math.max(8, Math.round(W / (2 * Math.max(1, density))))
 }
 
+// R pinned in absolute px instead of derived from the canvas width. Widening
+// the canvas then tiles MORE waves at the same scale rather than enlarging
+// them — the square design just extends sideways into a banner. Same minimum
+// clamp as patternR.
+export function lockedR(waveSize) {
+  return Math.max(8, Math.round(waveSize))
+}
+
 // Visible-only seigaiha line-work for ONE canonical scale at the origin: each
 // concentric arc is trimmed analytically to the angular spans NOT hidden
 // behind a front (lower-row) scale, so the result is just the line-work you

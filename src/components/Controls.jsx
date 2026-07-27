@@ -125,6 +125,34 @@ function Control({ control, values, onChange, shared }) {
       )
     }
 
+    case 'sizes':
+      // Canvas dimension shortcuts. Writes W and H together; App clamps the
+      // values measured against them (offsets, border) on the way through.
+      return (
+        <div className="ctrl">
+          <span className="ctrl-label">{c.label}</span>
+          <div className="sizes">
+            {c.options.map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                className={values.W === o.W && values.H === o.H ? 'size active' : 'size'}
+                title={`${o.W} × ${o.H}`}
+                onClick={() => {
+                  onChange('W', o.W)
+                  onChange('H', o.H)
+                }}
+              >
+                <strong>{o.label}</strong>
+                <em>
+                  {o.W}×{o.H}
+                </em>
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+
     case 'rotate': {
       // Two buttons stepping the angle by ±step° (default 90), wrapped to 0–359.
       const step = c.step || 90
@@ -151,7 +179,18 @@ function Control({ control, values, onChange, shared }) {
     case 'checkbox':
       return (
         <label className="ctrl inline">
-          <input type="checkbox" checked={!!val} onChange={(e) => onChange(c.key, e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={!!val}
+            onChange={(e) => {
+              onChange(c.key, e.target.checked)
+              // onEnable seeds sibling values from the current state when the
+              // box is ticked, so switching a mode on carries the look over
+              // instead of snapping to that mode's stored default.
+              if (e.target.checked && c.onEnable)
+                for (const [k, v] of Object.entries(c.onEnable(values, shared))) onChange(k, v)
+            }}
+          />
           <span>{c.label}</span>
         </label>
       )

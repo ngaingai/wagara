@@ -21,7 +21,22 @@ export default function App() {
   const module = getPattern(patternId)
   const params = paramsByPattern[patternId]
 
-  const setSharedKey = (key, value) => setShared((s) => ({ ...s, [key]: value }))
+  // Several shared controls are bounded by the canvas (see sharedControls'
+  // dynamic max functions). Resizing re-bounds them, so clamp the dependents
+  // here rather than leaving a nudge or border wider than the new canvas —
+  // otherwise switching to a short banner throws the pattern off the edge.
+  const setSharedKey = (key, value) =>
+    setShared((s) => {
+      const next = { ...s, [key]: value }
+      if (key === 'W' || key === 'H') {
+        // offsetX is signed (negative nudges left), so clamp both ends.
+        const maxX = Math.round(next.W / 2)
+        next.offsetX = Math.max(-maxX, Math.min(next.offsetX, maxX))
+        next.offsetY = Math.min(next.offsetY, Math.round(next.H / 2))
+        next.borderThickness = Math.min(next.borderThickness, Math.floor(Math.min(next.W, next.H) / 4))
+      }
+      return next
+    })
   const setParamKey = (key, value) =>
     setParamsByPattern((m) => ({ ...m, [patternId]: { ...m[patternId], [key]: value } }))
 
